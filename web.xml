@@ -6,7 +6,7 @@
 
     <servlet>
     <servlet-name>FrontServlet</servlet-name>
-    <servlet-class>mg.p16.Spring.FrontServlet</servlet-class>
+    <servlet-class>mg.p16.Spring.FrontController</servlet-class>
     </servlet>
 
     <servlet-mapping>

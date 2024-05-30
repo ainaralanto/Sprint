@@ -2,7 +2,12 @@
 rem Set variables for directories
 set SRC_DIR=src
 set LIB_DIR=lib
-set OUT_JAR=FrontServelet.jar
+set OUT_JAR=FrontServlet.jar
+
+rem Create lib directory if it doesn't exist
+if not exist "%LIB_DIR%" (
+    mkdir "%LIB_DIR%"
+)
 
 rem Compile Java classes
 echo Compiling Java classes...
@@ -16,10 +21,11 @@ if %ERRORLEVEL% EQU 0 (
 
     rem Create JAR file
     echo Creating JAR file...
-    cd "%LIB_DIR%"
+    pushd "%LIB_DIR%"
     jar cf "%OUT_JAR%" .
+    popd
 
-    echo JAR file created: "%OUT_JAR%"
+    echo JAR file created: "%LIB_DIR%\%OUT_JAR%"
 ) else (
     echo Compilation failed. Please check errors.
 )
