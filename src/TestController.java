@@ -7,11 +7,12 @@ import mg.p16.Annotationcontroller.AnnotationGet;
 public class TestController {
 
     @AnnotationGet("test")
-    public void testMethod() {
-        
+    public String testMethod() {
+        return "valeur de retour testMethod";
     }
 
     @AnnotationGet("hello")
-    public void helloMethod() {
+    public String helloMethod() {
+        return "valeur de retour helloMethod";
     }
 }

@@ -41,17 +41,29 @@ public class FrontController extends HttpServlet {
         // } else {
             Mapping mapping = urlMapping.get(controllerSearched);
 
-            out.println(urlMapping.size() + " -> "+controllerSearched);
+            // out.println(urlMapping.size() + " -> "+controllerSearched);
 
             Set<String> keys = urlMapping.keySet();
 
-            for (String key : keys) {
-                out.println("<p>"+key+"</p>");
-            }
+            // for (String key : keys) {
+            //     out.println("<p>"+key+"</p>");
+            // }
 
-            out.println("<p>URL demandée: " + requestURL.toString() + "</p>");
+            // out.println("<p>URL demandée: " + requestURL.toString() + "</p>");
             out.println("<p>Classe: " + mapping.getClassName() + "</p>");
             out.println("<p>Méthode: " + mapping.getMethodeName() + "</p>");
+
+            try {
+                Class<?> clazz = Class.forName(mapping.getClassName());
+                Method method = clazz.getMethod(mapping.getMethodeName());
+                Object instanceClazz = clazz.getDeclaredConstructor().newInstance();
+
+                Object obj = method.invoke(instanceClazz);
+                out.println("<p>String: " + String.valueOf(obj));
+            } 
+            catch (Exception e) {
+                e.printStackTrace();
+            }
 
         // }
         out.close();
