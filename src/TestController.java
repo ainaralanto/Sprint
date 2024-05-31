@@ -8,6 +8,7 @@ public class TestController {
 
     @AnnotationGet("test")
     public void testMethod() {
+        
     }
 
     @AnnotationGet("hello")
