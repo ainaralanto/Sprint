@@ -2,17 +2,22 @@ package controller;
 
 import mg.p16.Annotationcontroller.AnnotationController;
 import mg.p16.Annotationcontroller.AnnotationGet;
+import mg.p16.Spring.ModelView;
 
 @AnnotationController
 public class TestController {
 
-    @AnnotationGet("test")
-    public String testMethod() {
-        return "valeur de retour testMethod";
+    @AnnotationGet("hello")
+    public String hello() {
+        return "Hello, World!";
     }
 
-    @AnnotationGet("hello")
-    public String helloMethod() {
-        return "valeur de retour helloMethod";
+    @AnnotationGet("welcome")
+    public ModelView welcome() {
+        ModelView mv = new ModelView();
+        mv.setUrl("/welcome.jsp");
+        mv.addObject("message", "Message voalohany");
+        mv.addObject("message2", "Message faharoa");
+        return mv;
     }
 }
