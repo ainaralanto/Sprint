@@ -39,6 +39,12 @@ public class FrontController extends HttpServlet {
         String[] requestUrlSplitted = requestURL.toString().split("/");
         String controllerSearched = requestUrlSplitted[requestUrlSplitted.length - 1];
 
+        // Enlever le texte après "?" pour les liens GET
+        if (controllerSearched.contains("?")) {
+            controllerSearched = controllerSearched.split("\\?")[0];
+        }
+        System.out.println(controllerSearched);
+
         PrintWriter out = response.getWriter();
         response.setContentType("text/html");
 
@@ -46,9 +52,7 @@ public class FrontController extends HttpServlet {
             out.write(error);
             out.close();
             return;
-        }
-
-        if (!urlMapping.containsKey(controllerSearched)) {
+        } else if (!urlMapping.containsKey(controllerSearched)) {
             out.println("<p>Aucune méthode associée à ce chemin.</p>");
             out.close();
             return;
@@ -56,11 +60,7 @@ public class FrontController extends HttpServlet {
             Mapping mapping = urlMapping.get(controllerSearched);
 
             try {
-                Class<?> clazz = Class.forName(mapping.getClassName());
-                Method method = clazz.getMethod(mapping.getMethodeName());
-                Object instanceClazz = clazz.getDeclaredConstructor().newInstance();
-
-                Object result = method.invoke(instanceClazz);
+                Object result = invokeControllerMethod(mapping, request);
 
                 if (result instanceof String) {
                     out.write((String) result);
@@ -75,18 +75,50 @@ public class FrontController extends HttpServlet {
 
                     RequestDispatcher dispatcher = request.getRequestDispatcher(url);
                     dispatcher.forward(request, response);
+                    return;
                 } else {
                     out.write("Type de retour non reconnu.");
                 }
-
             } catch (Exception e) {
                 e.printStackTrace();
-                out.write("Erreur lors du traitement de la requête : " + e.getMessage());
+                out.write("Erreur lors du traitement de la requête.");
             }
         }
         out.close();
-    }
+        }
 
+        private Object invokeControllerMethod(Mapping mapping, HttpServletRequest request) throws Exception {
+            Class<?> clazz = Class.forName(mapping.getClassName());
+            Method targetMethod = null;
+        
+            for (Method method : clazz.getDeclaredMethods()) {
+                if (method.getName().equals(mapping.getMethodeName())) {
+                    targetMethod = method;
+                    break;
+                }
+            }
+        
+            if (targetMethod == null) {
+                throw new NoSuchMethodException("Méthode " + mapping.getMethodeName() + " non trouvée dans " + mapping.getClassName());
+            }
+        
+            Object instanceClazz = clazz.getDeclaredConstructor().newInstance();
+        
+            Parameter[] parameters = targetMethod.getParameters();
+            Object[] args = new Object[parameters.length];
+        
+            for (int i = 0; i < parameters.length; i++) {
+                if (parameters[i].isAnnotationPresent(Param.class)) {
+                    Param param = parameters[i].getAnnotation(Param.class);
+                    String paramName = param.name();
+                    String paramValue = request.getParameter(paramName);
+                    args[i] = paramValue;
+                }
+            }
+        
+            return targetMethod.invoke(instanceClazz, args);
+        }
+        
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
