@@ -15,9 +15,28 @@ public class TestController {
     @AnnotationGet("welcome")
     public ModelView welcome() {
         ModelView mv = new ModelView();
-        mv.setUrl("/welcome.jsp");
-        mv.addObject("message", "Message voalohany");
-        mv.addObject("message2", "Message faharoa");
+        try {
+            mv.setUrl("/welcome.jsp");
+        } catch (Exception e) {
+            // Gérer l'exception (par exemple, journaliser l'erreur, renvoyer une erreur
+            // spécifique, etc.)
+            e.printStackTrace();
+        }
+        mv.addObject("message", "Welcome to our application!");
+        return mv;
+    }
+
+    @AnnotationGet("welcome")
+    public ModelView welcome2() {
+        ModelView mv = new ModelView();
+        try {
+            mv.setUrl("/welcome.jsp");
+        } catch (Exception e) {
+            // Gérer l'exception (par exemple, journaliser l'erreur, renvoyer une erreur
+            // spécifique, etc.)
+            e.printStackTrace();
+        }
+        mv.addObject("message", "Welcome to our application 2!");
         return mv;
     }
 }

@@ -20,12 +20,17 @@ public class FrontController extends HttpServlet {
     private String packageName;
     private static List<String> controllerNames = new ArrayList<>();
     private HashMap<String, Mapping> urlMapping = new HashMap<>();
+    private String error;
 
     @Override
     public void init(ServletConfig config) throws ServletException {
         super.init(config);
         packageName = config.getInitParameter("packageControllerName");
-        scanControllers(packageName);
+        try {
+            scanControllers(packageName);
+        } catch (Exception err) {
+            error = err.getMessage();
+        }
     }
 
     protected void processRequest(HttpServletRequest request, HttpServletResponse response)
@@ -37,8 +42,16 @@ public class FrontController extends HttpServlet {
         PrintWriter out = response.getWriter();
         response.setContentType("text/html");
 
+        if (error != null && !error.isEmpty()) {
+            out.write(error);
+            out.close();
+            return;
+        }
+
         if (!urlMapping.containsKey(controllerSearched)) {
             out.println("<p>Aucune méthode associée à ce chemin.</p>");
+            out.close();
+            return;
         } else {
             Mapping mapping = urlMapping.get(controllerSearched);
 
@@ -68,7 +81,7 @@ public class FrontController extends HttpServlet {
 
             } catch (Exception e) {
                 e.printStackTrace();
-                out.write("Erreur lors du traitement de la requête.");
+                out.write("Erreur lors du traitement de la requête : " + e.getMessage());
             }
         }
         out.close();
@@ -86,7 +99,7 @@ public class FrontController extends HttpServlet {
         processRequest(request, response);
     }
 
-    private void scanControllers(String packageName) {
+    private void scanControllers(String packageName) throws Exception {
         try {
             ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
             String path = packageName.replace('.', '/');
@@ -97,35 +110,45 @@ public class FrontController extends HttpServlet {
             }
 
             Path classPath = Paths.get(resource.toURI());
-            Files.walk(classPath)
-                .filter(Files::isRegularFile)
-                .filter(f -> f.toString().endsWith(".class"))
-                .forEach(f -> {
-                    String className = packageName + "." + f.getFileName().toString().replace(".class", "");
-                    try {
-                        Class<?> clazz = Class.forName(className);
-                        if (clazz.isAnnotationPresent(AnnotationController.class) &&
+            List<Path> classFiles = Files.walk(classPath)
+                    .filter(Files::isRegularFile)
+                    .filter(f -> f.toString().endsWith(".class"))
+                    .toList();
+
+            if (classFiles.isEmpty()) {
+                throw new ServletException("Le package " + packageName + " est vide.");
+            }
+
+            for (Path f : classFiles) {
+                String className = packageName + "." + f.getFileName().toString().replace(".class", "");
+                try {
+                    Class<?> clazz = Class.forName(className);
+                    if (clazz.isAnnotationPresent(AnnotationController.class) &&
                             !Modifier.isAbstract(clazz.getModifiers())) {
-                            controllerNames.add(clazz.getSimpleName());
-                            Method[] methods = clazz.getMethods();
+                        controllerNames.add(clazz.getSimpleName());
+                        Method[] methods = clazz.getMethods();
 
-                            for (Method m : methods) {
-                                if (m.isAnnotationPresent(AnnotationGet.class)) {
-                                    Mapping mapping = new Mapping(className, m.getName());
-                                    AnnotationGet annotationGet = m.getAnnotation(AnnotationGet.class);
-                                    String annotationValue = annotationGet.value();
+                        for (Method m : methods) {
+                            if (m.isAnnotationPresent(AnnotationGet.class)) {
+                                Mapping mapping = new Mapping(className, m.getName());
+                                AnnotationGet annotationGet = m.getAnnotation(AnnotationGet.class);
+                                String annotationValue = annotationGet.value();
 
-                                    System.out.println("Mapping URL: " + annotationValue + " to " + className + "." + m.getName());
+                                System.out.println("Mapping URL: " + annotationValue + " to " + className + "." + m.getName());
+                                if (urlMapping.containsKey(annotationValue)) {
+                                    throw new RuntimeException("Double URL: " + annotationValue);
+                                } else {
                                     urlMapping.put(annotationValue, mapping);
                                 }
                             }
                         }
-                    } catch (ClassNotFoundException e) {
-                        e.printStackTrace();
                     }
-                });
+                } catch (ClassNotFoundException e) {
+                    throw new RuntimeException(e);
+                }
+            }
         } catch (Exception e) {
-            e.printStackTrace();
+            throw new ServletException("Erreur lors du scan des contrôleurs : " + e.getMessage(), e);
         }
     }
 }
