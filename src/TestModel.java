@@ -9,7 +9,6 @@ public class TestModel {
     @FieldParam(name = "age")
     private int age;
 
-    // Getters et setters
     public String getName() {
         return name;
     }
