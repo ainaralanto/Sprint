@@ -41,7 +41,6 @@ public class FrontController extends HttpServlet {
         String[] requestUrlSplitted = requestURL.toString().split("/");
         String controllerSearched = requestUrlSplitted[requestUrlSplitted.length - 1];
 
-        // Enlever le texte après "?" pour les liens GET
         if (controllerSearched.contains("?")) {
             controllerSearched = controllerSearched.split("\\?")[0];
         }
@@ -82,90 +81,84 @@ public class FrontController extends HttpServlet {
                     out.write("Type de retour non reconnu.");
                 }
             } catch (Exception e) {
-                e.printStackTrace();
-                out.write("Erreur lors du traitement de la requête.");
+                out.write(e.getMessage());
             }
         }
         out.close();
         }
 
 
-private Object invokeControllerMethod(Mapping mapping, HttpServletRequest request) throws Exception {
-    Class<?> clazz = Class.forName(mapping.getClassName());
-    Method targetMethod = null;
-
-    // Parcourir toutes les méthodes de la classe pour trouver celle qui correspond au nom et aux paramètres annotés
-    for (Method method : clazz.getDeclaredMethods()) {
-        if (method.getName().equals(mapping.getMethodeName())) {
-            targetMethod = method;
-            break;
-        }
-    }
-
-    if (targetMethod == null) {
-        throw new NoSuchMethodException("Méthode " + mapping.getMethodeName() + " non trouvée dans " + mapping.getClassName());
-    }
-
-    Object instanceClazz = clazz.getDeclaredConstructor().newInstance();
-
-    Parameter[] parameters = targetMethod.getParameters();
-    Object[] args = new Object[parameters.length];
-
-    Paranamer paranamer = new BytecodeReadingParanamer();
-    String[] paramNames = paranamer.lookupParameterNames(targetMethod, false);
-
-    for (int i = 0; i < parameters.length; i++) {
-        if (parameters[i].isAnnotationPresent(Param.class)) {
-            Param param = parameters[i].getAnnotation(Param.class);
-            String paramName = param.name();
-            String paramValue = request.getParameter(paramName);
-            args[i] = paramValue; // Assuming all parameters are Strings, convert as needed
-        } else if (parameters[i].isAnnotationPresent(ParamObject.class)) {
-            Class<?> paramType = parameters[i].getType();
-            Object paramObject = paramType.getDeclaredConstructor().newInstance();
-
-            for (Field field : paramType.getDeclaredFields()) {
-                String fieldName = field.getName();
-                if (field.isAnnotationPresent(FieldParam.class)) {
-                    FieldParam fieldParam = field.getAnnotation(FieldParam.class);
-                    if (!fieldParam.name().isEmpty()) {
-                        fieldName = fieldParam.name();
-                    }
-                }
-
-                String fieldValue = request.getParameter(fieldName);
-                if (fieldValue != null) {
-                    field.setAccessible(true);
-                    field.set(paramObject, convertToFieldType(field, fieldValue));
+        private Object invokeControllerMethod(Mapping mapping, HttpServletRequest request) throws Exception {
+            Class<?> clazz = Class.forName(mapping.getClassName());
+            Method targetMethod = null;
+    
+            for (Method method : clazz.getDeclaredMethods()) {
+                if (method.getName().equals(mapping.getMethodeName())) {
+                    targetMethod = method;
+                    break;
                 }
             }
-
-            args[i] = paramObject;
-        } else {
-            // Utiliser paranamer pour obtenir les noms de paramètres si non annotés
-            String paramName = paramNames[i];
-            String paramValue = request.getParameter(paramName);
-            args[i] = paramValue; // Assuming all parameters are Strings, convert as needed
+    
+            if (targetMethod == null) {
+                throw new NoSuchMethodException("Méthode " + mapping.getMethodeName() + " non trouvée dans " + mapping.getClassName());
+            }
+    
+            Object instanceClazz = clazz.getDeclaredConstructor().newInstance();
+    
+            Parameter[] parameters = targetMethod.getParameters();
+            Object[] args = new Object[parameters.length];
+    
+            Paranamer paranamer = new BytecodeReadingParanamer();
+            String[] paramNames = paranamer.lookupParameterNames(targetMethod, false);
+    
+            for (int i = 0; i < parameters.length; i++) {
+                if (parameters[i].isAnnotationPresent(Param.class)) {
+                    Param param = parameters[i].getAnnotation(Param.class);
+                    String paramName = param.name();
+                    String paramValue = request.getParameter(paramName);
+                    args[i] = paramValue;
+                } else if (parameters[i].isAnnotationPresent(ParamObject.class)) {
+                    Class<?> paramType = parameters[i].getType();
+                    Object paramObject = paramType.getDeclaredConstructor().newInstance();
+    
+                    for (Field field : paramType.getDeclaredFields()) {
+                        String fieldName = field.getName();
+                        if (field.isAnnotationPresent(FieldParam.class)) {
+                            FieldParam fieldParam = field.getAnnotation(FieldParam.class);
+                            if (!fieldParam.name().isEmpty()) {
+                                fieldName = fieldParam.name();
+                            }
+                        }
+    
+                        String fieldValue = request.getParameter(fieldName);
+                        if (fieldValue != null) {
+                            field.setAccessible(true);
+                            field.set(paramObject, convertToFieldType(field, fieldValue));
+                        }
+                    }
+    
+                    args[i] = paramObject;
+                } else {
+                    throw new RuntimeException("ETU002527 ; Le paramètre " + parameters[i].getName() + " dans la méthode " + targetMethod.getName() + " n'est pas annoté.");
+                }
+            }
+    
+            return targetMethod.invoke(instanceClazz, args);
         }
-    }
 
-    return targetMethod.invoke(instanceClazz, args);
-}
-
-private Object convertToFieldType(Field field, String value) {
-    Class<?> fieldType = field.getType();
-    if (fieldType == String.class) {
-        return value;
-    } else if (fieldType == int.class || fieldType == Integer.class) {
-        return Integer.parseInt(value);
-    } else if (fieldType == long.class || fieldType == Long.class) {
-        return Long.parseLong(value);
-    } else if (fieldType == boolean.class || fieldType == Boolean.class) {
-        return Boolean.parseBoolean(value);
-    }
-    // Ajoutez plus de types selon vos besoins
-    return null;
-}
+        private Object convertToFieldType(Field field, String value) {
+            Class<?> fieldType = field.getType();
+            if (fieldType == String.class) {
+                return value;
+            } else if (fieldType == int.class || fieldType == Integer.class) {
+                return Integer.parseInt(value);
+            } else if (fieldType == long.class || fieldType == Long.class) {
+                return Long.parseLong(value);
+            } else if (fieldType == boolean.class || fieldType == Boolean.class) {
+                return Boolean.parseBoolean(value);
+            }
+            return null;
+        }
 
         
     @Override
