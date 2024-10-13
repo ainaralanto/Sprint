@@ -17,6 +17,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 import com.thoughtworks.paranamer.*;
+import com.google.gson.*;
+
 
 public class FrontController extends HttpServlet {
     private String packageName;
@@ -36,57 +38,89 @@ public class FrontController extends HttpServlet {
     }
 
     protected void processRequest(HttpServletRequest request, HttpServletResponse response)
-            throws ServletException, IOException {
-        StringBuffer requestURL = request.getRequestURL();
-        String[] requestUrlSplitted = requestURL.toString().split("/");
-        String controllerSearched = requestUrlSplitted[requestUrlSplitted.length - 1];
+        throws ServletException, IOException {
+            StringBuffer requestURL = request.getRequestURL();
+            String[] requestUrlSplitted = requestURL.toString().split("/");
+            String controllerSearched = requestUrlSplitted[requestUrlSplitted.length - 1];
 
-        if (controllerSearched.contains("?")) {
-            controllerSearched = controllerSearched.split("\\?")[0];
-        }
-        System.out.println(controllerSearched);
-
-        PrintWriter out = response.getWriter();
-        response.setContentType("text/html");
-
-        if (error != null && !error.isEmpty()) {
-            out.write(error);
-            out.close();
-            return;
-        } else if (!urlMapping.containsKey(controllerSearched)) {
-            out.println("<p>Aucune méthode associée à ce chemin.</p>");
-            out.close();
-            return;
-        } else {
-            Mapping mapping = urlMapping.get(controllerSearched);
-
-            try {
-                Object result = invokeControllerMethod(mapping, request);
-
-                if (result instanceof String) {
-                    out.write((String) result);
-                } else if (result instanceof ModelView) {
-                    ModelView modelView = (ModelView) result;
-                    String url = modelView.getUrl();
-                    HashMap<String, Object> data = modelView.getData();
-
-                    for (Map.Entry<String, Object> entry : data.entrySet()) {
-                        request.setAttribute(entry.getKey(), entry.getValue());
-                    }
-
-                    RequestDispatcher dispatcher = request.getRequestDispatcher(url);
-                    dispatcher.forward(request, response);
-                    return;
-                } else {
-                    out.write("Type de retour non reconnu.");
-                }
-            } catch (Exception e) {
-                out.write(e.getMessage());
+            if (controllerSearched.contains("?")) {
+                controllerSearched = controllerSearched.split("\\?")[0];
             }
-        }
-        out.close();
+
+            PrintWriter out = response.getWriter();
+            Gson gson = new Gson();  // Pour la conversion en JSON
+            response.setContentType("application/json");  // Par défaut, la réponse est en JSON
+
+            if (error != null && !error.isEmpty()) {
+                out.write(gson.toJson(error));
+                out.close();
+                return;
+            } else if (!urlMapping.containsKey(controllerSearched)) {
+                out.write(gson.toJson("Aucune méthode associée à ce chemin."));
+                out.close();
+                return;
+            } else {
+                Mapping mapping = urlMapping.get(controllerSearched);
+
+                try {
+                    // Invoquer la méthode contrôleur
+                    Object result = invokeControllerMethod(mapping, request);
+
+                    Method targetMethod = getTargetMethod(mapping);  // Obtenir la méthode cible
+
+                    if (targetMethod.isAnnotationPresent(Restapi.class)) {
+                        // Si la méthode est annotée avec @Restapi, gérer la réponse en JSON
+                        response.setContentType("application/json");
+
+                        if (result instanceof ModelView) {
+                            // Si c'est un ModelView, envoyer l'attribut "data" en JSON
+                            ModelView modelView = (ModelView) result;
+                            String json = gson.toJson(modelView.getData());
+                            out.write(json);
+                        } else {
+                            // Sinon, transformer directement en JSON
+                            String json = gson.toJson(result);
+                            out.write(json);
+                        }
+                    } else {
+                        // Si pas d'annotation @Restapi, continuer avec le comportement classique
+                        if (result instanceof String) {
+                            out.write((String) result);
+                        } else if (result instanceof ModelView) {
+                            ModelView modelView = (ModelView) result;
+                            String url = modelView.getUrl();
+                            HashMap<String, Object> data = modelView.getData();
+
+                            for (Map.Entry<String, Object> entry : data.entrySet()) {
+                                request.setAttribute(entry.getKey(), entry.getValue());
+                            }
+
+                            RequestDispatcher dispatcher = request.getRequestDispatcher(url);
+                            dispatcher.forward(request, response);
+                            return;
+                        } else {
+                            out.write("Type de retour non reconnu.");
+                        }
+                    }
+                } catch (Exception e) {
+                    response.setContentType("application/json");
+                    response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+                    out.write(gson.toJson("Erreur interne: " + e.getMessage()));
+                    e.printStackTrace(out);
+                }
+            }
+            out.close();
         }
 
+        private Method getTargetMethod(Mapping mapping) throws ClassNotFoundException, NoSuchMethodException {
+            Class<?> clazz = Class.forName(mapping.getClassName());
+            for (Method method : clazz.getDeclaredMethods()) {
+                if (method.getName().equals(mapping.getMethodeName())) {
+                    return method;
+                }
+            }
+            throw new NoSuchMethodException("Méthode " + mapping.getMethodeName() + " non trouvée dans " + mapping.getClassName());
+        }        
 
         private Object invokeControllerMethod(Mapping mapping, HttpServletRequest request) throws Exception {
             Class<?> clazz = Class.forName(mapping.getClassName());
