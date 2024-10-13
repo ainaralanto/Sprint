@@ -38,79 +38,84 @@ public class FrontController extends HttpServlet {
     }
 
     protected void processRequest(HttpServletRequest request, HttpServletResponse response)
-        throws ServletException, IOException {
-            StringBuffer requestURL = request.getRequestURL();
-            String[] requestUrlSplitted = requestURL.toString().split("/");
-            String controllerSearched = requestUrlSplitted[requestUrlSplitted.length - 1];
+            throws ServletException, IOException {
+        StringBuffer requestURL = request.getRequestURL();
+        String[] requestUrlSplitted = requestURL.toString().split("/");
+        String controllerSearched = requestUrlSplitted[requestUrlSplitted.length - 1];
 
-            if (controllerSearched.contains("?")) {
-                controllerSearched = controllerSearched.split("\\?")[0];
-            }
-
-            PrintWriter out = response.getWriter();
-            Gson gson = new Gson();  // Pour la conversion en JSON
-            response.setContentType("application/json");  // Par défaut, la réponse est en JSON
-
-            if (error != null && !error.isEmpty()) {
-                out.write(gson.toJson(error));
-                out.close();
-                return;
-            } else if (!urlMapping.containsKey(controllerSearched)) {
-                out.write(gson.toJson("Aucune méthode associée à ce chemin."));
-                out.close();
-                return;
-            } else {
-                Mapping mapping = urlMapping.get(controllerSearched);
-
-                try {
-                    // Invoquer la méthode contrôleur
-                    Object result = invokeControllerMethod(mapping, request);
-
-                    Method targetMethod = getTargetMethod(mapping);  // Obtenir la méthode cible
-
-                    if (targetMethod.isAnnotationPresent(Restapi.class)) {
-                        // Si la méthode est annotée avec @Restapi, gérer la réponse en JSON
-                        response.setContentType("application/json");
-
-                        if (result instanceof ModelView) {
-                            // Si c'est un ModelView, envoyer l'attribut "data" en JSON
-                            ModelView modelView = (ModelView) result;
-                            String json = gson.toJson(modelView.getData());
-                            out.write(json);
-                        } else {
-                            // Sinon, transformer directement en JSON
-                            String json = gson.toJson(result);
-                            out.write(json);
-                        }
-                    } else {
-                        // Si pas d'annotation @Restapi, continuer avec le comportement classique
-                        if (result instanceof String) {
-                            out.write((String) result);
-                        } else if (result instanceof ModelView) {
-                            ModelView modelView = (ModelView) result;
-                            String url = modelView.getUrl();
-                            HashMap<String, Object> data = modelView.getData();
-
-                            for (Map.Entry<String, Object> entry : data.entrySet()) {
-                                request.setAttribute(entry.getKey(), entry.getValue());
-                            }
-
-                            RequestDispatcher dispatcher = request.getRequestDispatcher(url);
-                            dispatcher.forward(request, response);
-                            return;
-                        } else {
-                            out.write("Type de retour non reconnu.");
-                        }
-                    }
-                } catch (Exception e) {
-                    response.setContentType("application/json");
-                    response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-                    out.write(gson.toJson("Erreur interne: " + e.getMessage()));
-                    e.printStackTrace(out);
-                }
-            }
-            out.close();
+        if (controllerSearched.contains("?")) {
+            controllerSearched = controllerSearched.split("\\?")[0];
         }
+        System.out.println(controllerSearched);
+
+        PrintWriter out = response.getWriter();
+        response.setContentType("text/html");
+
+        if (error != null && !error.isEmpty()) {
+            out.write(error);
+            out.close();
+            return;
+        } else if (!urlMapping.containsKey(controllerSearched)) {
+            out.println("<p>Aucune méthode associée à ce chemin.</p>");
+            out.close();
+            return;
+        } else {
+            Mapping mapping = urlMapping.get(controllerSearched);
+            String method = request.getMethod();
+
+            if (!method.equalsIgnoreCase(mapping.getHttpMethod())) {
+                response.setStatus(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+                out.write("Méthode HTTP non autorisée pour l'URL : " + controllerSearched);
+                out.close();
+                return;
+            }
+
+            try {
+                Object result = invokeControllerMethod(mapping, request);
+
+                if (result instanceof String) {
+                    out.write((String) result);
+                } else if (result instanceof ModelView) {
+                    ModelView modelView = (ModelView) result;
+                    String url = modelView.getUrl();
+                    HashMap<String, Object> data = modelView.getData();
+
+                    for (Map.Entry<String, Object> entry : data.entrySet()) {
+                        request.setAttribute(entry.getKey(), entry.getValue());
+                    }
+
+                    RequestDispatcher dispatcher = request.getRequestDispatcher(url);
+                    dispatcher.forward(request, response);
+                    return;
+                } else {
+                    out.write("Type de retour non reconnu.");
+                }
+            } catch (Exception e) {
+                out.write(e.getMessage());
+            }
+        }
+        out.close();
+        }
+
+
+        private void handleJsonResponse(Object result, HttpServletResponse response) throws IOException {
+            response.setContentType("application/json");
+            PrintWriter out = response.getWriter();
+
+            Gson gson = new Gson();
+            String jsonResponse;
+
+            if (result instanceof ModelView) {
+                ModelView modelView = (ModelView) result;
+                jsonResponse = gson.toJson(modelView.getData());
+            } else {
+                jsonResponse = gson.toJson(result);
+            }
+
+            out.print(jsonResponse);
+            out.flush();
+        }
+
 
         private Method getTargetMethod(Mapping mapping) throws ClassNotFoundException, NoSuchMethodException {
             Class<?> clazz = Class.forName(mapping.getClassName());
@@ -212,21 +217,21 @@ public class FrontController extends HttpServlet {
             ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
             String path = packageName.replace('.', '/');
             URL resource = classLoader.getResource(path);
-
+    
             if (resource == null) {
                 throw new ServletException("Le package " + packageName + " est introuvable.");
             }
-
+    
             Path classPath = Paths.get(resource.toURI());
             List<Path> classFiles = Files.walk(classPath)
                     .filter(Files::isRegularFile)
                     .filter(f -> f.toString().endsWith(".class"))
                     .toList();
-
+    
             if (classFiles.isEmpty()) {
                 throw new ServletException("Le package " + packageName + " est vide.");
             }
-
+    
             for (Path f : classFiles) {
                 String className = packageName + "." + f.getFileName().toString().replace(".class", "");
                 try {
@@ -235,16 +240,25 @@ public class FrontController extends HttpServlet {
                             !Modifier.isAbstract(clazz.getModifiers())) {
                         controllerNames.add(clazz.getSimpleName());
                         Method[] methods = clazz.getMethods();
-
+    
                         for (Method m : methods) {
+                            String httpMethod = "GET";
+    
                             if (m.isAnnotationPresent(AnnotationGet.class)) {
-                                Mapping mapping = new Mapping(className, m.getName());
                                 AnnotationGet annotationGet = m.getAnnotation(AnnotationGet.class);
                                 String annotationValue = annotationGet.value();
-
-                                System.out.println("Mapping URL: " + annotationValue + " to " + className + "." + m.getName());
+                                Mapping mapping = new Mapping(className, m.getName(), httpMethod);
+                                urlMapping.put(annotationValue, mapping);
+                            }
+    
+                            if (m.isAnnotationPresent(AnnotationPost.class)) {
+                                httpMethod = "POST";
+                                AnnotationPost annotationPost = m.getAnnotation(AnnotationPost.class);
+                                String annotationValue = annotationPost.value();
+                                Mapping mapping = new Mapping(className, m.getName(), httpMethod);
+                                
                                 if (urlMapping.containsKey(annotationValue)) {
-                                    throw new RuntimeException("Double URL: " + annotationValue);
+                                    throw new RuntimeException("Conflit d'URL : " + annotationValue);
                                 } else {
                                     urlMapping.put(annotationValue, mapping);
                                 }
@@ -259,4 +273,6 @@ public class FrontController extends HttpServlet {
             throw new ServletException("Erreur lors du scan des contrôleurs : " + e.getMessage(), e);
         }
     }
+    
+    
 }
