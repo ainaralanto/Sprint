@@ -3,10 +3,12 @@ package mg.p16.classe;
 public class Mapping {
     String className;
     String methodeName;
+    String httpMethod;
 
-    public Mapping(String className, String methodeName) {
+    public Mapping(String className, String methodeName, String httpMethod) {
         this.className = className;
         this.methodeName = methodeName;
+        this.httpMethod = httpMethod;
     }
     
     public String getClassName() {
@@ -24,4 +26,14 @@ public class Mapping {
     public void setMethodeName(String methodeName) {
         this.methodeName = methodeName;
     }
+
+    public String getHttpMethod() {
+        return httpMethod;
+    }
+
+    public void setHttpMethod(String httpMethod) {
+        this.httpMethod = httpMethod;
+    }
+
+    
 }
