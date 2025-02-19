@@ -37,8 +37,7 @@ public class FrontController extends HttpServlet {
         }
     }
 
-    protected void processRequest(HttpServletRequest request, HttpServletResponse response)
-            throws ServletException, IOException {
+    protected void processRequest(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
         StringBuffer requestURL = request.getRequestURL();
         String[] requestUrlSplitted = requestURL.toString().split("/");
         String controllerSearched = requestUrlSplitted[requestUrlSplitted.length - 1];
@@ -51,26 +50,24 @@ public class FrontController extends HttpServlet {
         PrintWriter out = response.getWriter();
         response.setContentType("text/html");
 
-        if (error != null && !error.isEmpty()) {
-            out.write(error);
-            out.close();
-            return;
-        } else if (!urlMapping.containsKey(controllerSearched)) {
-            out.println("<p>Aucune méthode associée à ce chemin.</p>");
-            out.close();
-            return;
-        } else {
-            Mapping mapping = urlMapping.get(controllerSearched);
-            String method = request.getMethod();
-
-            if (!method.equalsIgnoreCase(mapping.getHttpMethod())) {
-                response.setStatus(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
-                out.write("Méthode HTTP non autorisée pour l'URL : " + controllerSearched);
-                out.close();
-                return;
+        try{
+            if (error != null && !error.isEmpty()) {
+                throw new ServletException(error);
             }
+            
+            if (!urlMapping.containsKey(controllerSearched)) {
+                throw new ServletException("Aucune méthode associée à ce chemin : " + controllerSearched);
+            }
+            else {
+                Mapping mapping = urlMapping.get(controllerSearched);
+                String method = request.getMethod();
 
-            try {
+                if (!request.getMethod().equalsIgnoreCase(mapping.getHttpMethod())) {
+                    response.setStatus(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+                    throw new ServletException("Méthode HTTP non autorisée pour l'URL : " + controllerSearched);
+
+                }
+
                 Object result = invokeControllerMethod(mapping, request);
 
                 if (result instanceof String) {
@@ -88,14 +85,15 @@ public class FrontController extends HttpServlet {
                     dispatcher.forward(request, response);
                     return;
                 } else {
-                    out.write("Type de retour non reconnu.");
+                    throw new ServletException("Type de retour non reconnu.");
                 }
-            } catch (Exception e) {
-                out.write(e.getMessage());
+
             }
+        } catch (Exception e) {
+            redirectToErrorPage(request, response, "Une erreur est survenue : " + e.getMessage());
         }
         out.close();
-        }
+    }
 
 
         private void handleJsonResponse(Object result, HttpServletResponse response) throws IOException {
@@ -143,7 +141,6 @@ public class FrontController extends HttpServlet {
             }
     
             Object instanceClazz = clazz.getDeclaredConstructor().newInstance();
-    
             Parameter[] parameters = targetMethod.getParameters();
             Object[] args = new Object[parameters.length];
     
@@ -184,6 +181,7 @@ public class FrontController extends HttpServlet {
     
             return targetMethod.invoke(instanceClazz, args);
         }
+        
 
         private Object convertToFieldType(Field field, String value) {
             Class<?> fieldType = field.getType();
@@ -213,66 +211,101 @@ public class FrontController extends HttpServlet {
     }
 
     private void scanControllers(String packageName) throws Exception {
-        try {
-            ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
-            String path = packageName.replace('.', '/');
-            URL resource = classLoader.getResource(path);
-    
-            if (resource == null) {
-                throw new ServletException("Le package " + packageName + " est introuvable.");
-            }
-    
-            Path classPath = Paths.get(resource.toURI());
-            List<Path> classFiles = Files.walk(classPath)
-                    .filter(Files::isRegularFile)
-                    .filter(f -> f.toString().endsWith(".class"))
-                    .toList();
-    
-            if (classFiles.isEmpty()) {
-                throw new ServletException("Le package " + packageName + " est vide.");
-            }
-    
-            for (Path f : classFiles) {
-                String className = packageName + "." + f.getFileName().toString().replace(".class", "");
-                try {
-                    Class<?> clazz = Class.forName(className);
-                    if (clazz.isAnnotationPresent(AnnotationController.class) &&
-                            !Modifier.isAbstract(clazz.getModifiers())) {
-                        controllerNames.add(clazz.getSimpleName());
-                        Method[] methods = clazz.getMethods();
-    
-                        for (Method m : methods) {
-                            String httpMethod = "GET";
-    
-                            if (m.isAnnotationPresent(AnnotationGet.class)) {
-                                AnnotationGet annotationGet = m.getAnnotation(AnnotationGet.class);
-                                String annotationValue = annotationGet.value();
-                                Mapping mapping = new Mapping(className, m.getName(), httpMethod);
+        ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+        String path = packageName.replace('.', '/');
+        URL resource = classLoader.getResource(path);
+
+        if (resource == null) {
+            throw new ServletException("Le package " + packageName + " est introuvable.");
+        }
+
+        Path classPath = Paths.get(resource.toURI());
+        List<Path> classFiles = Files.walk(classPath)
+                .filter(Files::isRegularFile)
+                .filter(f -> f.toString().endsWith(".class"))
+                .toList();
+
+        if (classFiles.isEmpty()) {
+            throw new ServletException("Le package " + packageName + " est vide.");
+        }
+
+        for (Path f : classFiles) {
+            String className = packageName + "." + f.getFileName().toString().replace(".class", "");
+            try {
+                Class<?> clazz = Class.forName(className);
+                if (clazz.isAnnotationPresent(AnnotationController.class) &&
+                        !Modifier.isAbstract(clazz.getModifiers())) {
+                    controllerNames.add(clazz.getSimpleName());
+                    Method[] methods = clazz.getMethods();
+
+                    for (Method m : methods) {
+                        String httpMethod = "GET";
+
+                        if (m.isAnnotationPresent(AnnotationGet.class)) {
+                            AnnotationGet annotationGet = m.getAnnotation(AnnotationGet.class);
+                            String annotationValue = annotationGet.value();
+                            Mapping mapping = new Mapping(className, m.getName(), httpMethod);
+                            if (urlMapping.containsKey(annotationValue)) {
+                                throw new RuntimeException("Conflit d'URL : " + annotationValue);
+                            } else {
                                 urlMapping.put(annotationValue, mapping);
                             }
-    
-                            if (m.isAnnotationPresent(AnnotationPost.class)) {
-                                httpMethod = "POST";
-                                AnnotationPost annotationPost = m.getAnnotation(AnnotationPost.class);
-                                String annotationValue = annotationPost.value();
-                                Mapping mapping = new Mapping(className, m.getName(), httpMethod);
-                                
-                                if (urlMapping.containsKey(annotationValue)) {
-                                    throw new RuntimeException("Conflit d'URL : " + annotationValue);
-                                } else {
-                                    urlMapping.put(annotationValue, mapping);
-                                }
+                        }
+
+                        if (m.isAnnotationPresent(AnnotationPost.class)) {
+                            httpMethod = "POST";
+                            AnnotationPost annotationPost = m.getAnnotation(AnnotationPost.class);
+                            String annotationValue = annotationPost.value();
+                            Mapping mapping = new Mapping(className, m.getName(), httpMethod);
+
+                            if (urlMapping.containsKey(annotationValue)) {
+                                throw new RuntimeException("Conflit d'URL : " + annotationValue);
+                            } else {
+                                urlMapping.put(annotationValue, mapping);
                             }
                         }
                     }
-                } catch (ClassNotFoundException e) {
-                    throw new RuntimeException(e);
                 }
+            } catch (ClassNotFoundException e) {
+                throw new RuntimeException(e);
             }
-        } catch (Exception e) {
-            throw new ServletException("Erreur lors du scan des contrôleurs : " + e.getMessage(), e);
         }
     }
     
+    private void redirectToErrorPage(HttpServletRequest request, HttpServletResponse response, String message) throws ServletException, IOException {
+        request.setAttribute("error", message);
+        request.getRequestDispatcher("error/error.jsp").forward(request, response);
+    }
+
+    private void sendErrorResponse(HttpServletResponse response, String message) throws IOException {
+        response.setContentType("text/html;charset=UTF-8");
+        response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        
+        PrintWriter out = response.getWriter();
+        out.println("<!DOCTYPE html>");
+        out.println("<html lang='fr'>");
+        out.println("<head>");
+        out.println("<meta charset='UTF-8'>");
+        out.println("<meta name='viewport' content='width=device-width, initial-scale=1.0'>");
+        out.println("<title>Erreur - Page introuvable</title>");
+        out.println("<style>");
+        out.println("body { background-color: #f8d7da; font-family: Arial, sans-serif; text-align: center; padding: 50px; }");
+        out.println(".error-container { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); display: inline-block; max-width: 600px; width: 90%; }");
+        out.println("h2 { color: #721c24; }");
+        out.println("p { color: #721c24; font-size: 18px; }");
+        out.println(".error-code { font-size: 72px; font-weight: bold; color: #dc3545; margin: 0; }");
+        out.println("@keyframes fadeIn { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }");
+        out.println(".error-container { animation: fadeIn 0.5s ease-in-out; }");
+        out.println("</style>");
+        out.println("</head>");
+        out.println("<body>");
+        out.println("<div class='error-container'>");
+        out.println("<p class='error-code'>⚠ 500</p>");
+        out.println("<h2>Une erreur est survenue</h2>");
+        out.println("<p><strong>" + message + "</strong></p>");
+        out.println("</div>");
+        out.println("</body>");
+        out.println("</html>");
+    }
     
 }
