@@ -5,6 +5,7 @@ import java.lang.reflect.*;
 import java.net.URL;
 import java.nio.file.*;
 import java.util.*;
+import java.util.regex.Pattern;
 
 import mg.p16.Annotationcontroller.*;
 import mg.p16.classe.*;
@@ -70,22 +71,38 @@ public class FrontController extends HttpServlet {
 
                 Object result = invokeControllerMethod(mapping, request);
 
-                if (result instanceof String) {
-                    out.write((String) result);
-                } else if (result instanceof ModelView) {
-                    ModelView modelView = (ModelView) result;
-                    String url = modelView.getUrl();
-                    HashMap<String, Object> data = modelView.getData();
+                Method targetMethod = getTargetMethod(mapping);
 
-                    for (Map.Entry<String, Object> entry : data.entrySet()) {
-                        request.setAttribute(entry.getKey(), entry.getValue());
+                if (targetMethod.isAnnotationPresent(Restapi.class)) {
+                    response.setContentType("application/json");
+                    Gson gson = new Gson();  
+
+                    if (result instanceof ModelView) {
+                        ModelView modelView = (ModelView) result;
+                        String json = gson.toJson(modelView.getData());
+                        out.write(json);
+                    } else {
+                        String json = gson.toJson(result);
+                        out.write(json);
                     }
-
-                    RequestDispatcher dispatcher = request.getRequestDispatcher(url);
-                    dispatcher.forward(request, response);
-                    return;
                 } else {
-                    throw new ServletException("Type de retour non reconnu.");
+                    if (result instanceof String) {
+                        out.write((String) result);
+                    } else if (result instanceof ModelView) {
+                        ModelView modelView = (ModelView) result;
+                        String url = modelView.getUrl();
+                        HashMap<String, Object> data = modelView.getData();
+
+                        for (Map.Entry<String, Object> entry : data.entrySet()) {
+                            request.setAttribute(entry.getKey(), entry.getValue());
+                        }
+
+                        RequestDispatcher dispatcher = request.getRequestDispatcher(url);
+                        dispatcher.forward(request, response);
+                        return;
+                    } else {
+                        throw new ServletException("Type de retour non reconnu.");
+                    }
                 }
 
             }
@@ -173,15 +190,96 @@ public class FrontController extends HttpServlet {
                         }
                     }
     
+                    validate(paramObject);
                     args[i] = paramObject;
+<<<<<<< Updated upstream
                 } else {
+=======
+
+                } else if (parameters[i].isAnnotationPresent(UploadFile.class)) {
+                    UploadFile uploadFileAnnotation = parameters[i].getAnnotation(UploadFile.class);
+                    String fileNameParam = uploadFileAnnotation.value(); 
+                    Part filePart = request.getPart(fileNameParam);
+                
+                    if (filePart != null && filePart.getSize() > 0) {
+                        String fileName = Paths.get(filePart.getSubmittedFileName()).getFileName().toString();
+                
+                        String uploadDir = request.getServletContext().getRealPath("/uploads/");
+                        File uploadFolder = new File(uploadDir);
+                        if (!uploadFolder.exists()) {
+                            uploadFolder.mkdirs();
+                        }
+                
+                        Path filePath = Paths.get(uploadDir, fileName);
+                
+                        try (InputStream fileContent = filePart.getInputStream()) {
+                            Files.copy(fileContent, filePath, StandardCopyOption.REPLACE_EXISTING);
+                        }
+                
+                        Fichier fichier = new Fichier(fileName, filePath.toString());
+                        fichier.setContenu(Files.readAllBytes(filePath));
+
+                        args[i] = fichier;
+                    } else {
+                        args[i] = null;
+                    }
+
+                    
+                }
+                
+                else {
+>>>>>>> Stashed changes
                     throw new RuntimeException("ETU002527 ; Le paramètre " + parameters[i].getName() + " dans la méthode " + targetMethod.getName() + " n'est pas annoté.");
                 }
             }
     
             return targetMethod.invoke(instanceClazz, args);
         }
+
+        public static void validate(Object paramObject) throws Exception {
+            for (Field field : paramObject.getClass().getDeclaredFields()) {
+                field.setAccessible(true);
+                Object fieldValue;
+                try {
+                    fieldValue = field.get(paramObject);
+                } catch (IllegalAccessException e) {
+                    throw new RuntimeException("Erreur d'accès au champ " + field.getName(), e);
+                }
         
+<<<<<<< Updated upstream
+=======
+                if (field.isAnnotationPresent(Validation.NotNull.class) && fieldValue == null || fieldValue.toString() == "") {
+                    System.out.println(field.getName()+" value: "+fieldValue+" ,misy not null");
+                    throw new ServletException(field.getAnnotation(Validation.NotNull.class).message());
+                }
+                
+                if (field.isAnnotationPresent(Validation.ValidEmail.class) && fieldValue != null) {
+                    System.out.println(field.getName()+" misy email");
+
+                    String email = fieldValue.toString();
+                    if (!email.matches("^[A-Za-z0-9+_.-]+@(.+)$")) {
+                        throw new ServletException(field.getAnnotation(Validation.ValidEmail.class).message());
+                    }
+                }
+                
+                if (field.isAnnotationPresent(Validation.ValidInt.class) && fieldValue != null) {
+                    int value = Integer.parseInt(fieldValue.toString());
+                    Validation.ValidInt validInt = field.getAnnotation(Validation.ValidInt.class);
+                    if (value < validInt.min() || value > validInt.max()) {
+                        throw new ServletException(validInt.message());
+                    }
+                }
+                
+                if (field.isAnnotationPresent(Validation.ValidString.class) && fieldValue != null) {
+                    int length = fieldValue.toString().length();
+                    Validation.ValidString validString = field.getAnnotation(Validation.ValidString.class);
+                    if (length < validString.min() || length > validString.max()) {
+                        throw new ServletException(validString.message());
+                    }
+                }
+            }
+        }
+>>>>>>> Stashed changes
 
         private Object convertToFieldType(Field field, String value) {
             Class<?> fieldType = field.getType();
