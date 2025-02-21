@@ -195,15 +195,6 @@ public class FrontController extends HttpServlet {
     
                     validate(paramObject);
                     args[i] = paramObject;
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-                } else {
-=======
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
 
                 } else if (parameters[i].isAnnotationPresent(UploadFile.class)) {
                     UploadFile uploadFileAnnotation = parameters[i].getAnnotation(UploadFile.class);
@@ -237,13 +228,6 @@ public class FrontController extends HttpServlet {
                 }
                 
                 else {
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
                     throw new RuntimeException("ETU002527 ; Le paramètre " + parameters[i].getName() + " dans la méthode " + targetMethod.getName() + " n'est pas annoté.");
                 }
             }
@@ -261,14 +245,6 @@ public class FrontController extends HttpServlet {
                     throw new RuntimeException("Erreur d'accès au champ " + field.getName(), e);
                 }
         
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-=======
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
                 if (field.isAnnotationPresent(Validation.NotNull.class) && fieldValue == null || fieldValue.toString() == "") {
                     System.out.println(field.getName()+" value: "+fieldValue+" ,misy not null");
                     throw new ServletException(field.getAnnotation(Validation.NotNull.class).message());
@@ -300,13 +276,6 @@ public class FrontController extends HttpServlet {
                 }
             }
         }
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
 
         private Object convertToFieldType(Field field, String value) {
             Class<?> fieldType = field.getType();
