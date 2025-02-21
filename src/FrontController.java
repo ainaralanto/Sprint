@@ -197,8 +197,11 @@ public class FrontController extends HttpServlet {
                     args[i] = paramObject;
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
                 } else {
 =======
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 
@@ -235,6 +238,9 @@ public class FrontController extends HttpServlet {
                 
                 else {
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -257,7 +263,10 @@ public class FrontController extends HttpServlet {
         
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 =======
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
                 if (field.isAnnotationPresent(Validation.NotNull.class) && fieldValue == null || fieldValue.toString() == "") {
@@ -292,6 +301,9 @@ public class FrontController extends HttpServlet {
             }
         }
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
