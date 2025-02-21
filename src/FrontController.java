@@ -15,11 +15,14 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.Part;
+
+import jakarta.servlet.annotation.MultipartConfig;
 
 import com.thoughtworks.paranamer.*;
 import com.google.gson.*;
 
-
+@MultipartConfig
 public class FrontController extends HttpServlet {
     private String packageName;
     private static List<String> controllerNames = new ArrayList<>();
@@ -90,7 +93,7 @@ public class FrontController extends HttpServlet {
 
             }
         } catch (Exception e) {
-            redirectToErrorPage(request, response, "Une erreur est survenue : " + e.getMessage());
+            sendErrorResponse(response, "Une erreur est survenue : " + e.getMessage());
         }
         out.close();
     }
@@ -174,7 +177,36 @@ public class FrontController extends HttpServlet {
                     }
     
                     args[i] = paramObject;
-                } else {
+                } else if (parameters[i].isAnnotationPresent(UploadFile.class)) {
+                    UploadFile uploadFileAnnotation = parameters[i].getAnnotation(UploadFile.class);
+                    String fileNameParam = uploadFileAnnotation.value(); 
+                    Part filePart = request.getPart(fileNameParam);
+                
+                    if (filePart != null && filePart.getSize() > 0) {
+                        String fileName = Paths.get(filePart.getSubmittedFileName()).getFileName().toString();
+                
+                        String uploadDir = request.getServletContext().getRealPath("/uploads/");
+                        File uploadFolder = new File(uploadDir);
+                        if (!uploadFolder.exists()) {
+                            uploadFolder.mkdirs();
+                        }
+                
+                        Path filePath = Paths.get(uploadDir, fileName);
+                
+                        try (InputStream fileContent = filePart.getInputStream()) {
+                            Files.copy(fileContent, filePath, StandardCopyOption.REPLACE_EXISTING);
+                        }
+                
+                        Fichier fichier = new Fichier(fileName, filePath.toString());
+                        fichier.setContenu(Files.readAllBytes(filePath));
+
+                        args[i] = fichier;
+                    } else {
+                        args[i] = null;
+                    }
+                }
+                
+                else {
                     throw new RuntimeException("ETU002527 ; Le paramètre " + parameters[i].getName() + " dans la méthode " + targetMethod.getName() + " n'est pas annoté.");
                 }
             }
@@ -182,7 +214,7 @@ public class FrontController extends HttpServlet {
             return targetMethod.invoke(instanceClazz, args);
         }
         
-
+        
         private Object convertToFieldType(Field field, String value) {
             Class<?> fieldType = field.getType();
             if (fieldType == String.class) {
@@ -214,21 +246,21 @@ public class FrontController extends HttpServlet {
         ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
         String path = packageName.replace('.', '/');
         URL resource = classLoader.getResource(path);
-
+    
         if (resource == null) {
             throw new ServletException("Le package " + packageName + " est introuvable.");
         }
-
+    
         Path classPath = Paths.get(resource.toURI());
         List<Path> classFiles = Files.walk(classPath)
                 .filter(Files::isRegularFile)
                 .filter(f -> f.toString().endsWith(".class"))
                 .toList();
-
+    
         if (classFiles.isEmpty()) {
             throw new ServletException("Le package " + packageName + " est vide.");
         }
-
+    
         for (Path f : classFiles) {
             String className = packageName + "." + f.getFileName().toString().replace(".class", "");
             try {
@@ -237,33 +269,36 @@ public class FrontController extends HttpServlet {
                         !Modifier.isAbstract(clazz.getModifiers())) {
                     controllerNames.add(clazz.getSimpleName());
                     Method[] methods = clazz.getMethods();
-
+    
                     for (Method m : methods) {
                         String httpMethod = "GET";
-
+                        String annotationValue = "";
+                        boolean isPost = false;
+    
                         if (m.isAnnotationPresent(AnnotationGet.class)) {
-                            AnnotationGet annotationGet = m.getAnnotation(AnnotationGet.class);
-                            String annotationValue = annotationGet.value();
-                            Mapping mapping = new Mapping(className, m.getName(), httpMethod);
-                            if (urlMapping.containsKey(annotationValue)) {
-                                throw new RuntimeException("Conflit d'URL : " + annotationValue);
-                            } else {
-                                urlMapping.put(annotationValue, mapping);
-                            }
-                        }
-
-                        if (m.isAnnotationPresent(AnnotationPost.class)) {
+                            annotationValue = m.getAnnotation(AnnotationGet.class).value();
+                        } else if (m.isAnnotationPresent(AnnotationPost.class)) {
+                            annotationValue = m.getAnnotation(AnnotationPost.class).value();
                             httpMethod = "POST";
-                            AnnotationPost annotationPost = m.getAnnotation(AnnotationPost.class);
-                            String annotationValue = annotationPost.value();
+                            isPost = true;
+                        }
+    
+                        if (!annotationValue.isEmpty()) {
                             Mapping mapping = new Mapping(className, m.getName(), httpMethod);
-
                             if (urlMapping.containsKey(annotationValue)) {
                                 throw new RuntimeException("Conflit d'URL : " + annotationValue);
-                            } else {
-                                urlMapping.put(annotationValue, mapping);
                             }
+                            urlMapping.put(annotationValue, mapping);
                         }
+    
+                        // // Vérifier si la méthode contient des paramètres annotés @UploadFile
+                        // for (Parameter param : m.getParameters()) {
+                        //     if (param.isAnnotationPresent(UploadFile.class)) {
+                        //         if (!isPost) {
+                        //             throw new RuntimeException("L'annotation @UploadFile doit être utilisée avec une requête POST.");
+                        //         }
+                        //     }
+                        // }
                     }
                 }
             } catch (ClassNotFoundException e) {
@@ -271,6 +306,7 @@ public class FrontController extends HttpServlet {
             }
         }
     }
+    
     
     private void redirectToErrorPage(HttpServletRequest request, HttpServletResponse response, String message) throws ServletException, IOException {
         request.setAttribute("error", message);
