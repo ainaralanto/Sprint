@@ -176,6 +176,7 @@ public class FrontController extends HttpServlet {
                         }
                     }
     
+                    validate(paramObject);
                     args[i] = paramObject;
                 } else if (parameters[i].isAnnotationPresent(UploadFile.class)) {
                     UploadFile uploadFileAnnotation = parameters[i].getAnnotation(UploadFile.class);
@@ -212,6 +213,45 @@ public class FrontController extends HttpServlet {
             }
     
             return targetMethod.invoke(instanceClazz, args);
+        }
+
+        public static void validate(Object paramObject) throws Exception {
+            for (Field field : paramObject.getClass().getDeclaredFields()) {
+                field.setAccessible(true);
+                Object fieldValue;
+                try {
+                    fieldValue = field.get(paramObject);
+                } catch (IllegalAccessException e) {
+                    throw new RuntimeException("Erreur d'accès au champ " + field.getName(), e);
+                }
+        
+                if (field.isAnnotationPresent(Validation.NotNull.class) && fieldValue == null || fieldValue.toString() == "") {
+                    throw new ServletException(field.getAnnotation(Validation.NotNull.class).message());
+                }
+                
+                if (field.isAnnotationPresent(Validation.ValidEmail.class) && fieldValue != null) {
+                    String email = fieldValue.toString();
+                    if (!email.matches("^[A-Za-z0-9+_.-]+@(.+)$")) {
+                        throw new ServletException(field.getAnnotation(Validation.ValidEmail.class).message());
+                    }
+                }
+                
+                if (field.isAnnotationPresent(Validation.ValidInt.class) && fieldValue != null) {
+                    int value = Integer.parseInt(fieldValue.toString());
+                    Validation.ValidInt validInt = field.getAnnotation(Validation.ValidInt.class);
+                    if (value < validInt.min() || value > validInt.max()) {
+                        throw new ServletException(validInt.message());
+                    }
+                }
+                
+                if (field.isAnnotationPresent(Validation.ValidString.class) && fieldValue != null) {
+                    int length = fieldValue.toString().length();
+                    Validation.ValidString validString = field.getAnnotation(Validation.ValidString.class);
+                    if (length < validString.min() || length > validString.max()) {
+                        throw new ServletException(validString.message());
+                    }
+                }
+            }
         }
         
         
