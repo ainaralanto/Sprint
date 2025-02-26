@@ -72,6 +72,12 @@ public class FrontController extends HttpServlet {
                 }
 
                 Object result = invokeControllerMethod(mapping, request, response);
+                
+                if (result instanceof MySession) {
+                    MySession mySession = new MySession(request.getSession());
+                    result = mySession;
+                }
+
 
                 if (result instanceof String) {
                     out.write((String) result);
@@ -144,6 +150,27 @@ public class FrontController extends HttpServlet {
             if (targetMethod == null) {
                 throw new NoSuchMethodException("Méthode " + mapping.getMethodeName() + " non trouvée dans " + mapping.getClassName());
             }
+
+            Auth authAnnotation = targetMethod.getAnnotation(Auth.class);
+            if (authAnnotation != null) {
+                String[] requiredRoles = authAnnotation.value();
+        
+                String userRole = (String) request.getSession().getAttribute("userRole");
+        
+                boolean hasRole = false;
+                if (userRole != null) {
+                    for (String role : requiredRoles) {
+                        if (userRole.equals(role)) {
+                            hasRole = true;
+                            break;
+                        }
+                    }
+                }
+        
+                if (!hasRole) {
+                    throw new RuntimeException("Le rôle \"" + userRole + "\" n'est pas autorisé à accéder à la méthode \"" + targetMethod.getName() + "\".");
+                }
+            }
     
             Object instanceClazz = clazz.getDeclaredConstructor().newInstance();
             Parameter[] parameters = targetMethod.getParameters();
@@ -186,7 +213,10 @@ public class FrontController extends HttpServlet {
     
                     validateObject(paramObject, validationResult);
                     args[i] = paramObject;
-                } else if (parameters[i].isAnnotationPresent(UploadFile.class)) {
+                } else if (parameters[i].getType().equals(MySession.class)) {
+                    MySession mySession = new MySession(request.getSession());
+                    args[i] = mySession;
+                }  else if (parameters[i].isAnnotationPresent(UploadFile.class)) {
                     UploadFile uploadFileAnnotation = parameters[i].getAnnotation(UploadFile.class);
                     String fileNameParam = uploadFileAnnotation.value(); 
                     Part filePart = request.getPart(fileNameParam);
