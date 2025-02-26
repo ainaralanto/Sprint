@@ -71,7 +71,7 @@ public class FrontController extends HttpServlet {
 
                 }
 
-                Object result = invokeControllerMethod(mapping, request);
+                Object result = invokeControllerMethod(mapping, request, response);
 
                 if (result instanceof String) {
                     out.write((String) result);
@@ -79,6 +79,9 @@ public class FrontController extends HttpServlet {
                     ModelView modelView = (ModelView) result;
                     String url = modelView.getUrl();
                     HashMap<String, Object> data = modelView.getData();
+
+                    request.getSession().setAttribute("previousPage", url);
+                    System.out.println("Page: "+url);
 
                     for (Map.Entry<String, Object> entry : data.entrySet()) {
                         request.setAttribute(entry.getKey(), entry.getValue());
@@ -117,7 +120,6 @@ public class FrontController extends HttpServlet {
             out.flush();
         }
 
-
         private Method getTargetMethod(Mapping mapping) throws ClassNotFoundException, NoSuchMethodException {
             Class<?> clazz = Class.forName(mapping.getClassName());
             for (Method method : clazz.getDeclaredMethods()) {
@@ -128,7 +130,7 @@ public class FrontController extends HttpServlet {
             throw new NoSuchMethodException("Méthode " + mapping.getMethodeName() + " non trouvée dans " + mapping.getClassName());
         }        
 
-        private Object invokeControllerMethod(Mapping mapping, HttpServletRequest request) throws Exception {
+        private Object invokeControllerMethod(Mapping mapping, HttpServletRequest request, HttpServletResponse response) throws Exception {
             Class<?> clazz = Class.forName(mapping.getClassName());
             Method targetMethod = null;
     
@@ -146,7 +148,11 @@ public class FrontController extends HttpServlet {
             Object instanceClazz = clazz.getDeclaredConstructor().newInstance();
             Parameter[] parameters = targetMethod.getParameters();
             Object[] args = new Object[parameters.length];
-    
+
+            String previousPage = (String) request.getSession().getAttribute("previousPage");
+            ValidationResult validationResult = new ValidationResult();
+            validationResult.setRedirectPage(previousPage);    
+            
             Paranamer paranamer = new BytecodeReadingParanamer();
             String[] paramNames = paranamer.lookupParameterNames(targetMethod, false);
     
@@ -174,9 +180,11 @@ public class FrontController extends HttpServlet {
                             field.setAccessible(true);
                             field.set(paramObject, convertToFieldType(field, fieldValue));
                         }
+
+                        validationResult.addValue(fieldName, fieldValue);
                     }
     
-                    validate(paramObject);
+                    validateObject(paramObject, validationResult);
                     args[i] = paramObject;
                 } else if (parameters[i].isAnnotationPresent(UploadFile.class)) {
                     UploadFile uploadFileAnnotation = parameters[i].getAnnotation(UploadFile.class);
@@ -211,48 +219,57 @@ public class FrontController extends HttpServlet {
                     throw new RuntimeException("ETU002527 ; Le paramètre " + parameters[i].getName() + " dans la méthode " + targetMethod.getName() + " n'est pas annoté.");
                 }
             }
+
+            if (validationResult.hasErrors()) {
+                request.setAttribute("validationResult", validationResult);
+                request.getRequestDispatcher(validationResult.getRedirectPage()).forward(request, response);
+                // System.out.println(validationResult.getRedirectUrl());
+                return null;
+            }
     
             return targetMethod.invoke(instanceClazz, args);
         }
 
-        public static void validate(Object paramObject) throws Exception {
+        private void validateObject(Object paramObject, ValidationResult validationResult) {
             for (Field field : paramObject.getClass().getDeclaredFields()) {
                 field.setAccessible(true);
                 Object fieldValue;
+        
                 try {
                     fieldValue = field.get(paramObject);
                 } catch (IllegalAccessException e) {
                     throw new RuntimeException("Erreur d'accès au champ " + field.getName(), e);
                 }
         
-                if (field.isAnnotationPresent(Validation.NotNull.class) && fieldValue == null || fieldValue.toString() == "") {
-                    throw new ServletException(field.getAnnotation(Validation.NotNull.class).message());
+                if (field.isAnnotationPresent(Validation.NotNull.class) && (fieldValue == null || fieldValue.toString().isEmpty())) {
+                    validationResult.addError(field.getName(), field.getAnnotation(Validation.NotNull.class).message());
                 }
-                
+        
                 if (field.isAnnotationPresent(Validation.ValidEmail.class) && fieldValue != null) {
                     String email = fieldValue.toString();
                     if (!email.matches("^[A-Za-z0-9+_.-]+@(.+)$")) {
-                        throw new ServletException(field.getAnnotation(Validation.ValidEmail.class).message());
+                        validationResult.addError(field.getName(), field.getAnnotation(Validation.ValidEmail.class).message());
                     }
                 }
-                
+        
                 if (field.isAnnotationPresent(Validation.ValidInt.class) && fieldValue != null) {
                     int value = Integer.parseInt(fieldValue.toString());
                     Validation.ValidInt validInt = field.getAnnotation(Validation.ValidInt.class);
                     if (value < validInt.min() || value > validInt.max()) {
-                        throw new ServletException(validInt.message());
+                        validationResult.addError(field.getName(), validInt.message());
                     }
                 }
-                
+        
                 if (field.isAnnotationPresent(Validation.ValidString.class) && fieldValue != null) {
                     int length = fieldValue.toString().length();
                     Validation.ValidString validString = field.getAnnotation(Validation.ValidString.class);
                     if (length < validString.min() || length > validString.max()) {
-                        throw new ServletException(validString.message());
+                        validationResult.addError(field.getName(), validString.message());
                     }
                 }
             }
         }
+        
         
         
         private Object convertToFieldType(Field field, String value) {
