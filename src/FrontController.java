@@ -139,7 +139,14 @@ public class FrontController extends HttpServlet {
         private Object invokeControllerMethod(Mapping mapping, HttpServletRequest request, HttpServletResponse response) throws Exception {
             Class<?> clazz = Class.forName(mapping.getClassName());
             Method targetMethod = null;
-    
+
+            Auth controllerAuth = clazz.getAnnotation(Auth.class);
+            String[] roles = controllerAuth != null ? controllerAuth.value() : new String[0];
+
+            if(isAuthDouble(clazz)){
+                throw new IllegalStateException(clazz.getSimpleName() + " est deja annotée avec @Auth, on ne peut plus annoter ses methodes");
+            }
+
             for (Method method : clazz.getDeclaredMethods()) {
                 if (method.getName().equals(mapping.getMethodeName())) {
                     targetMethod = method;
@@ -153,22 +160,20 @@ public class FrontController extends HttpServlet {
 
             Auth authAnnotation = targetMethod.getAnnotation(Auth.class);
             if (authAnnotation != null) {
-                String[] requiredRoles = authAnnotation.value();
-        
+                roles = authAnnotation.value();
+                
                 String userRole = (String) request.getSession().getAttribute("userRole");
-        
-                boolean hasRole = false;
-                if (userRole != null) {
-                    for (String role : requiredRoles) {
-                        if (userRole.equals(role)) {
-                            hasRole = true;
-                            break;
-                        }
-                    }
-                }
-        
-                if (!hasRole) {
+            
+                if (!hasPermission(roles, userRole)) {
                     throw new RuntimeException("Le rôle \"" + userRole + "\" n'est pas autorisé à accéder à la méthode \"" + targetMethod.getName() + "\".");
+                }
+            } else {
+                if (roles.length > 0) {
+                    String userRole = (String) request.getSession().getAttribute("userRole");
+            
+                    if (!hasPermission(roles, userRole)) {
+                        throw new RuntimeException("Le rôle \"" + userRole + "\" n'est pas autorisé à accéder à la méthode \"" + targetMethod.getName() + "\".");
+                    }
                 }
             }
     
@@ -258,6 +263,27 @@ public class FrontController extends HttpServlet {
             }
     
             return targetMethod.invoke(instanceClazz, args);
+        }
+
+        public static boolean isAuthDouble(Class<?> controllerClass) {
+            Auth controllerAuth = controllerClass.getAnnotation(Auth.class);
+            if (controllerAuth != null) {
+                for (Method method : controllerClass.getDeclaredMethods()) {
+                    if (method.isAnnotationPresent(Auth.class)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        private boolean hasPermission(String[] roles, String currentRole) {
+            for (String role : roles) {
+                if (role.equals(currentRole)) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private void validateObject(Object paramObject, ValidationResult validationResult) {
